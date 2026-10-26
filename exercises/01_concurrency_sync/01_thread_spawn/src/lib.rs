@@ -157,7 +157,11 @@ pub fn double_in_thread(numbers: Vec<i32>) -> Vec<i32> {
     // TODO: Create a new thread to multiply each element of numbers by 2
     // Use thread::spawn and move closure
     // Use join().unwrap() to get result
-    todo!()
+    let handle = thread::spawn(move || {
+        numbers.into_iter().map(|n| n * 2).collect()
+    });
+
+    handle.join().unwrap()
 }
 
 /// Sum two vectors in parallel, returning a tuple of two sums.
@@ -167,7 +171,19 @@ pub fn double_in_thread(numbers: Vec<i32>) -> Vec<i32> {
 pub fn parallel_sum(a: Vec<i32>, b: Vec<i32>) -> (i32, i32) {
     // TODO: Create two threads to sum a and b respectively
     // Join both threads to get results
-    todo!()
+    let handlea = thread::spawn(move || {
+        a.into_iter().sum::<i32>()
+    });
+
+    let handleb = thread::spawn(move || {
+        b.into_iter().sum::<i32>()
+    });
+
+    (
+        handlea.join().unwrap(),
+        handleb.join().unwrap()
+    )
+
 }
 
 // ============================================================================
@@ -180,13 +196,36 @@ pub fn parallel_sum(a: Vec<i32>, b: Vec<i32>) -> (i32, i32) {
 /// Inside the thread, call `thread::sleep(Duration::from_millis(ms))` before returning `value`.
 ///
 /// Hint: `thread::sleep` causes the current thread to block; it does not affect other threads.
+
 #[allow(unused_variables)]
 pub fn named_sleeper(value: i32, ms: u64) -> i32 {
     // TODO: Create a thread builder with name "sleeper"
     // TODO: Spawn a thread that sleeps for `ms` milliseconds and returns `value`
     // TODO: Join the thread and return the value
-    todo!()
+    let handle = match thread::Builder::new()
+        .name("sleeper".to_string())
+        .spawn(move || {
+            thread::sleep(Duration::from_millis(ms));
+            value
+        }) {
+        Ok(handle) => handle,
+        Err(err) => panic!("failed to spawn sleeper thread: {err}"),
+    };
+    
+    handle.join().unwrap()
 }
+
+// 一个变量的生命周期像static一样长期存在，但是他的值又必须是按照线程相互隔离的
+// 每个线程访问它时，访问的都是自己线程里的那份独立数据。
+
+
+// | 需求 | 常见方案 |
+// |---|---|
+// | 只读全局配置 | 普通 `static` |
+// | 每个线程一份简单可变值 | `thread_local! + Cell` |
+// | 每个线程一份复杂可变结构 | `thread_local! + RefCell` |
+// | 多线程共享整数/布尔/指针计数 | `AtomicUsize`、`AtomicBool` 等 |
+// | 多线程共享复杂结构 | `Mutex`、`RwLock` |
 
 thread_local! {
     static THREAD_COUNT: RefCell<usize> = RefCell::new(0);
@@ -200,7 +239,11 @@ thread_local! {
 /// Hint: Use `THREAD_COUNT.with(|cell| { ... })` to access the thread‑local variable.
 pub fn increment_thread_local() -> usize {
     // TODO: Use THREAD_COUNT.with to increment and return the new count
-    todo!()
+    THREAD_COUNT.with(|count| {
+        let mut val = count.borrow_mut();
+        *val += 1;
+        *val
+    })
 }
 
 /// Spawn two threads using a **scoped thread** to compute the sum of two slices without moving ownership.
@@ -211,12 +254,21 @@ pub fn increment_thread_local() -> usize {
 /// Hint: The slices are references, so you cannot move them into the closure.
 /// `thread::scope` guarantees that all spawned threads finish before the scope ends,
 /// making the borrow safe.
+// thread::scope：有作用域约束的线程
 #[allow(unused_variables)]
 pub fn scoped_slice_sum(a: &[i32], b: &[i32]) -> (i32, i32) {
     // TODO: Use thread::scope to spawn two threads
     // TODO: Each thread sums its slice
     // TODO: Wait for both threads and return the results
-    todo!()
+    thread::scope(|s| {
+        let handle_a = s.spawn(|| a.into_iter().sum::<i32>());
+        let handle_b = s.spawn(|| b.into_iter().sum::<i32>());
+
+        let suma = handle_a.join().unwrap();
+        let sumb = handle_b.join().unwrap();
+
+        (suma, sumb)
+    })
 }
 
 /// Handle a possible panic in a spawned thread.
@@ -233,8 +285,19 @@ pub fn scoped_slice_sum(a: &[i32], b: &[i32]) -> (i32, i32) {
 pub fn handle_panic(value: i32, should_panic: bool) -> Result<i32, ()> {
     // TODO: Spawn a thread that either panics or returns value
     // TODO: Join and map the result appropriately
-    todo!()
+    let handle = thread::spawn(move || {
+        if should_panic {
+            panic!("oops");
+        }
+        value
+    });
+
+    match handle.join() {
+        Ok(v) => Ok(v),
+        Err(_) => Err(())
+    }
 }
+
 
 #[cfg(test)]
 mod tests {

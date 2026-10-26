@@ -7,20 +7,43 @@
 //! - `Arc<T>` atomic reference counting enables cross-thread sharing
 //! - `lock()` acquires the lock and accesses data
 
+use std::num;
+use std::process::id;
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::thread::{self, Thread};
 
 /// Increment a counter concurrently using `n_threads` threads.
 /// Each thread increments the counter `count_per_thread` times.
 /// Returns the final counter value.
 ///
 /// Hint: Use `Arc<Mutex<usize>>` as the shared counter.
+/// 多个线程修改同一份数据
 pub fn concurrent_counter(n_threads: usize, count_per_thread: usize) -> usize {
     // TODO: Create Arc<Mutex<usize>> with initial value 0
     // TODO: Spawn n_threads threads
     // TODO: In each thread, lock() and increment count_per_thread times
     // TODO: Join all threads, return final value
-    todo!()
+    let shared_counter = Arc::new(Mutex::new(0usize));
+
+    let mut handles = Vec::new();
+
+    for _ in 0..n_threads {
+        let couter = Arc::clone(&shared_counter);
+
+        handles.push(thread::spawn(move || {
+            for _ in 0..count_per_thread {
+                let mut count = couter.lock().unwrap();
+                *count += 1;
+            }
+        }));
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    let count = *shared_counter.lock().unwrap();
+    count
 }
 
 /// Add elements to a shared vector concurrently using multiple threads.
@@ -32,7 +55,28 @@ pub fn concurrent_collect(n_threads: usize) -> Vec<usize> {
     // TODO: Create Arc<Mutex<Vec<usize>>>
     // TODO: Each thread pushes its own id
     // TODO: After joining all threads, sort the result and return
-    todo!()
+
+    let shared_counter = Arc::new(Mutex::new(Vec::new()));
+
+    let mut handles = Vec::new();
+
+    for id in 0..n_threads {
+        let count = Arc::clone(&shared_counter);
+
+        handles.push(thread::spawn(move || {
+            let mut thread_id = count.lock().unwrap();
+
+            thread_id.push(id);
+        }));
+    }
+
+    for handel in handles {
+        handel.join().unwrap();
+    }
+
+    let mut number = shared_counter.lock().unwrap().clone();
+    number.sort();
+    number
 }
 
 #[cfg(test)]
