@@ -5,9 +5,7 @@
 //!
 //! ## Background
 //!
-//! In the Linux kernel, each process has an fd table that maps integer fds to kernel file objects.
-//! User programs perform read/write/close via fds, and the kernel looks up the corresponding
-//! file object through the fd table.
+
 //!
 //! ```text
 //! fd table:
@@ -38,52 +36,77 @@
 //! - fd number reuse strategy (find smallest free slot)
 //! - `Arc` reference counting and resource release
 
-use std::sync::Arc;
+use std::{num::IntErrorKind::PosOverflow, os::fd, sync::Arc};
 
 /// File abstraction trait — all "files" in the kernel (regular files, pipes, sockets) implement this
-pub trait File: Send + Sync {
-    fn read(&self, buf: &mut [u8]) -> isize;
-    fn write(&self, buf: &[u8]) -> isize;
+pub trait File: Send + Sync {                 // send安全跨线程转移所有权、sync安全在线程之间共享引用
+    fn read(&self, buf: &mut [u8]) -> isize;  // 读取的内容写缓冲区
+    fn write(&self, buf: &[u8]) -> isize;     // 读缓冲区内容写入文件对象
 }
 
-/// File descriptor table
+/// File descriptor table  文件描述符表
 pub struct FdTable {
     // TODO: Design the internal structure
     // Hint: use Vec<Option<Arc<dyn File>>>
     //       the index is the fd number, None means the fd is closed or unallocated
+    // 
+    // Option: 代表 fd 的状态
+    //      Some(file) 代表 fd 当前打开
+    //      None       代表 fd 空闲、关闭或者未使用
+    // 
+    // Arc：代表文件对象被共享
+    //      是原子引用计数的智能指针，表示多个所有者共享同一个对象。
+    //      
+    // File: File 是一个trait，文件抽象特性——内核中的所有“文件”
+    //      （普通文件、管道、套接字）都实现了此特性
+    //
+    table: Vec<Option<Arc<dyn File>>>,
 }
 
 impl FdTable {
     /// Create an empty fd table
     pub fn new() -> Self {
         // TODO
-        todo!()
+        Self { table: Vec::new() }
     }
 
     /// Allocate a new fd, return the fd number.
     ///
     /// Prefers reusing the smallest closed fd number; if no free slot, appends to the end.
     pub fn alloc(&mut self, file: Arc<dyn File>) -> usize {
-        // TODO
-        todo!()
+        if let Some(fd) = self.table.iter().position(|pos| pos.is_none()) {
+            self.table[fd] = Some(file);
+            fd
+        }else {
+            self.table.push(Some((file)));
+            self.table.len() - 1 
+        }
+        
     }
 
     /// Get the file object for an fd. Returns None if the fd doesn't exist or is closed.
     pub fn get(&self, fd: usize) -> Option<Arc<dyn File>> {
         // TODO
-        todo!()
+        match self.table.get(fd) {
+            None => None,                           // fd 越界
+            Some(None) => None,                     // fd 已关闭
+            Some(Some(file)) => Some(file.clone()), // fd 有效
+        }
     }
 
     /// Close an fd. Returns true on success, false if the fd doesn't exist or is already closed.
     pub fn close(&mut self, fd: usize) -> bool {
         // TODO
-        todo!()
+        match self.table.get_mut(fd) {
+            Some(fd) => fd.take().is_some(),
+            None => false
+        }
     }
 
     /// Return the number of currently allocated fds (excluding closed ones)
     pub fn count(&self) -> usize {
         // TODO
-        todo!()
+        self.table.iter().flatten().count()    //跳过多层嵌套的None
     }
 }
 

@@ -38,6 +38,7 @@
 
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::null_mut;
+use core::sync::atomic::Ordering;
 
 /// Free block header, stored at the beginning of each free memory block
 struct FreeBlock {
@@ -119,19 +120,79 @@ unsafe impl GlobalAlloc for FreeListAllocator {
         // TODO: Step 2 — no suitable block in free_list, allocate from bump region
         //
         // Same logic as 02_bump_allocator's alloc
-        todo!()
+
+        // 链表的前一个
+        let mut prev: *mut FreeBlock = null_mut();
+
+        // 链表当前指向的头指针
+        let mut curr = self.free_list_head();
+
+        // 遍历整条链表
+        while !curr.is_null() {
+            let block = &mut *curr;
+
+            // 地址满足对齐 + 空间足够
+            if (curr as usize) % align == 0 && block.size >= size {
+                // 把 curr 从链表中移除
+                let next = block.next;
+    
+                if prev.is_null() {
+                    // curr 是链表头
+                    self.set_free_list_head(next);
+                } else {
+                    // curr 在 prev 后面
+                    (*prev).next = next;
+                }
+    
+                return curr as *mut u8;
+            }
+    
+            prev = curr;
+            curr = block.next;
+        }
+        
+        // Step 2: 空闲链表里没有合适块，继续从 bump 区域分配
+        loop {
+            let current = self.bump_next.load(Ordering::SeqCst);
+    
+            let Some(rounded) = current.checked_add(align - 1) else {
+                return null_mut();
+            };
+            let aligned = rounded & !(align - 1);
+    
+            let Some(end) = aligned.checked_add(size) else {
+                return null_mut();
+            };
+    
+            if end > self.heap_end {
+                return null_mut();
+            }
+    
+            match self.bump_next.compare_exchange(
+                current,
+                end,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return aligned as *mut u8,
+                Err(_) => continue,
+            }
+        }
+        
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let size = layout.size().max(core::mem::size_of::<FreeBlock>());
 
-        // TODO: Insert the freed block at the head of free_list
-        //
-        // Steps:
-        // 1. Cast ptr to *mut FreeBlock
-        // 2. Write FreeBlock { size, next: current list head }
-        // 3. Update free_list head to ptr
-        todo!()
+    let old_head = self.free_list_head();
+    let block_ptr = ptr as *mut FreeBlock;
+
+    block_ptr.write(FreeBlock {
+        size,
+        next: old_head,
+    });
+
+    self.set_free_list_head(block_ptr);
     }
 }
 
