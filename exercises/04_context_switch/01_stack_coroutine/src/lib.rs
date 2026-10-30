@@ -73,11 +73,11 @@ impl TaskContext {
 ///
 /// Must be `#[unsafe(naked)]` to prevent the compiler from generating a prologue/epilogue.
 pub unsafe fn switch_context(old: &mut TaskContext, new: &TaskContext) {
-    unsafe { switch_context_asm(old, new) }
+    switch_context_asm(old, new)
 }
 
     #[unsafe(naked)]
-    unsafe extern "C" fn switch_context_asm(_old: &mut TaskContext, _new: &TaskContext) {
+    extern "C" fn switch_context_asm(_old: &mut TaskContext, _new: &TaskContext) {
         core::arch::naked_asm!(
             "sd sp, 0(a0)",
             "sd ra, 8(a0)",
