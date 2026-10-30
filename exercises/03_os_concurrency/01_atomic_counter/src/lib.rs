@@ -21,24 +21,36 @@ impl AtomicCounter {
         }
     }
 
+    /*
+     * 
+         | Ordering | 适合操作 | 什么时候用 |
+         |---|---|---|
+         | `Relaxed` | 读/写/读改写 | 只需原子性，不需要同步 |
+         | `Release` | 写 | 发布数据，配合 `Acquire` |
+         | `Acquire` | 读 | 获取数据，配合 `Release` |
+         | `AcqRel` | 读改写 | CAS、锁、自旋等同步原语 |
+         | `SeqCst` | 任意 | 需要全局一致顺序，或不确定时 |
+     * 
+     */
+
     /// Atomically increments by 1, returns the value **before** increment.
     ///
     /// Hint: use `fetch_add` with `Ordering::Relaxed`
     pub fn increment(&self) -> u64 {
         // TODO
-        todo!()
+        self.value.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Atomically decrements by 1, returns the value **before** decrement.
     pub fn decrement(&self) -> u64 {
         // TODO
-        todo!()
+        self.value.fetch_sub(1, Ordering::Relaxed)
     }
 
     /// Gets the current value.
     pub fn get(&self) -> u64 {
         // TODO
-        todo!()
+        self.value.load(Ordering::Relaxed)
     }
 
     /// Atomic CAS (Compare-And-Swap) operation.
@@ -48,7 +60,7 @@ impl AtomicCounter {
     /// Hint: use `compare_exchange` with success ordering `Ordering::AcqRel` and failure ordering `Ordering::Acquire`
     pub fn compare_and_swap(&self, expected: u64, new_val: u64) -> Result<u64, u64> {
         // TODO
-        todo!()
+        self.value.compare_exchange(expected, new_val, Ordering::AcqRel, Ordering::Acquire)
     }
 
     /// Multiply the value atomically using a CAS loop.
@@ -62,7 +74,24 @@ impl AtomicCounter {
         //     let new = current * multiplier;
         //     match self.compare_and_swap(current, new) { ... }
         // }
-        todo!()
+        loop {
+            let current = self.value.load(Ordering::Relaxed);
+            let new = current * multiplier;
+            // 尝试将 current 替换为 new
+            match self.value.compare_exchange(
+                current,
+                new,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return current, // 替换成功，返回旧值
+                Err(actual) => {
+                    // 替换失败，说明值被其他线程修改了，循环重试
+                    // 这里可以将 actual 赋值给 current 进行优化，但直接 loop 也可以
+                    continue;
+                }
+            }
+        }
     }
 }
 
